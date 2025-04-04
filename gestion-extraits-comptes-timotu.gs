@@ -184,3 +184,72 @@ function copierBlocDeBase(sheet0) {
 function normalizeString(str) {
   return String(str).toLowerCase().replace(/"/g, "").replace(/\s+/g, "");
 }
+
+
+// Nouvelle configuration pour le master
+const CONFIG_MASTER = {
+  DEST_SHEET_ID: "1phKrlZI6WPfU3UKMqBOUAYfm7AGq9NU9Mg30zNvUzvI",
+  CSV_FOLDER_ID: "16FYmwWvKy2icIUgZWQ_jfOMnPycZWV2M",
+  MASTER_SHEET_NAME: "master"  // Nom de l'onglet master dans le Google Sheet
+};
+
+/**
+ * Lancement de la mise à jour pour tous les fichiers CSV du dossier.
+ * Pour chaque fichier dont le nom correspond au pattern CAYYYYMMDD_random.csv,
+ * le script extrait le numéro de compte (suite de 11 chiffres après "Compte courant n°")
+ * et met à jour l'onglet master en inscrivant la date et l'heure du passage du script
+ * en colonne C sur la même ligne où se trouve le numéro de compte dans la plage B6:B11.
+ */
+function lancementMajAllCsv() {
+  const folder = DriveApp.getFolderById(CONFIG_MASTER.CSV_FOLDER_ID);
+  const files = folder.getFiles();
+  
+  // Pattern : CA suivi de 8 chiffres, underscore, puis au moins un chiffre, et l'extension .csv
+  const filePattern = /^CA\d{8}_\d+\.csv$/i;
+  
+  while (files.hasNext()) {
+    const file = files.next();
+    const fileName = file.getName();
+    if (!filePattern.test(fileName)) continue;
+    
+    // Récupération du contenu du fichier en ISO-8859-1
+    const fileContent = file.getBlob().getDataAsString("ISO-8859-1");
+    
+    // Recherche du numéro de compte (11 chiffres) après "Compte courant n°"
+    const accountRegex = /Compte courant n°\s*(\d{11})/;
+    const match = fileContent.match(accountRegex);
+    
+    if (match && match[1]) {
+      const accountNumber = match[1];
+      updateMasterSheet(accountNumber);
+    } else {
+      Logger.log("Numéro de compte non trouvé dans le fichier : " + fileName);
+    }
+  }
+}
+
+/**
+ * Recherche dans l'onglet master (plage B6:B11) le numéro de compte fourni.
+ * Si trouvé, inscrit la date et l'heure du passage du script dans la colonne C de la même ligne.
+ */
+function updateMasterSheet(accountNumber) {
+  const ss = SpreadsheetApp.openById(CONFIG_MASTER.DEST_SHEET_ID);
+  const masterSheet = ss.getSheetByName(CONFIG_MASTER.MASTER_SHEET_NAME);
+  if (!masterSheet) {
+    Logger.log("Onglet '" + CONFIG_MASTER.MASTER_SHEET_NAME + "' introuvable.");
+    return;
+  }
+  
+  const range = masterSheet.getRange("B6:B11");
+  const values = range.getValues();
+  
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0]).trim() === accountNumber) {
+      // La ligne dans le sheet est i+6 (car on part de la ligne 6)
+      masterSheet.getRange(i + 6, 3).setValue(new Date());
+      Logger.log("Compte " + accountNumber + " mis à jour à " + new Date());
+      break;
+    }
+  }
+}
+
